@@ -43,8 +43,7 @@ typedef enum states {
 /* --- Externs & Transport Prototypes --- */
 extern UART_HandleTypeDef huart3;
 extern volatile bool flag;
-volatile double arm_cmd[7]    = {0};
-volatile double wheel_info[8] = {0};
+
 bool cubemx_transport_open(struct uxrCustomTransport * transport);
 bool cubemx_transport_close(struct uxrCustomTransport * transport);
 size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err);
@@ -85,6 +84,7 @@ void payload_cb(const void * msgin) {
     taskENTER_CRITICAL();
     flag = m->use_arm;
     memcpy((void *)arm_cmd, m->arm_cmd, sizeof(arm_cmd));
+    memcpy((void *)ld_cmd,  m->ld_cmd,  sizeof(ld_cmd));
     taskEXIT_CRITICAL();
   //  custom_status_msg.arm_cmd[x]; for array
   // Add your arm callback logic here
@@ -241,6 +241,12 @@ void microros_main_Run(void *argument)
 
       case AGENT_DISCONNECTED:
         ros_destroy();
+        taskENTER_CRITICAL();
+        motor_cmd_valid = false;
+        flag = false;
+        memset((void *)arm_cmd, 0, sizeof(arm_cmd));
+        memset((void *)ld_cmd,  0, sizeof(ld_cmd));
+        taskEXIT_CRITICAL();
         agent_state = WAITING_AGENT;
         break;
     }
