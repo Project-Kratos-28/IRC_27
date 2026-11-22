@@ -1,0 +1,24 @@
+# STM32CubeIDE Build outputs
+motherboard_kratos/Debug/
+motherboard_kratos/Release/
+Debug/
+Release/
+
+# Compiled object and binary files
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.list
+*.map
+*.hex
+*.bin
+
+# Eclipse project / user configuration
+motherboard_kratos/.settings/language.settings.xml
+.settings/
+
+# OS specific files
+.DS_Store
+Thumbs.db

@@ -16,6 +16,7 @@ volatile bool   flag = false;
 double   motor_cmd_shared[6] = {0};
 uint32_t motor_cmd_stamp_ms  = 0;
 bool     motor_cmd_valid     = false;
+
 // =====================================================
 // ROS 2 INTEGRATION VARIABLES & HOOKS
 // =====================================================
@@ -167,6 +168,66 @@ void MotorControl_Update(float dt_seconds)
     g_current_rpm = current_rpms[0];
 }
 
+// =====================================================
+// USEFUL DEFINITIONS FOR ARM CODE
+// =====================================================
+
+typedef struct {
+
+		TIM_HandleTypeDef *timer;
+		uint32_t channel;
+		GPIO_TypeDef *dir_port;
+		uint16_t dir_pin;
+
+	} ArmMotor;
+
+//arm motor definition
+ArmMotor arm_motors[6] =
+	{
+	    {&htim8, TIM_CHANNEL_1, GPIOD, GPIO_PIN_7}, //PC6
+	    {&htim8, TIM_CHANNEL_2, GPIOD, GPIO_PIN_8}, //PC7
+	    {&htim8, TIM_CHANNEL_3, GPIOD, GPIO_PIN_9}, //PC8
+	    {&htim8, TIM_CHANNEL_4, GPIOD, GPIO_PIN_10}, //PC9
+	    {&htim15, TIM_CHANNEL_1, GPIOD, GPIO_PIN_11}, //PE5
+//		{, TIM_CHANNEL_, GPIOD, GPIO_PIN_}
+	    // Sixth motor goes here
+	};
+
+//set all the motors
+void Arm_Motor_Init()
+{
+
+	HAL_TIM_PWM_Start(arm_motors[0].timer, arm_motors[0].channel); //PC6
+	HAL_TIM_PWM_Start(arm_motors[1].timer, arm_motors[1].channel); //PC7
+	HAL_TIM_PWM_Start(arm_motors[2].timer, arm_motors[2].channel); //PC8
+	HAL_TIM_PWM_Start(arm_motors[3].timer, arm_motors[3].channel); //PC9
+	HAL_TIM_PWM_Start(arm_motors[4].timer, arm_motors[4].channel); //PE5
+
+}
+
+//code to control one motor
+
+void Arm_Set_Motor(uint8_t motor_id, int16_t input)
+{
+
+	uint16_t duty_cycle = (input > 0) ? input : -1*input;
+	duty_cycle = (duty_cycle > 255) ? 255 : duty_cycle;
+
+	//decide direction (negative means pin = 0 means backwards)
+	HAL_GPIO_WritePin(arm_motors[motor_id].dir_port, arm_motors[motor_id].dir_pin, (input > 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	__HAL_TIM_SET_COMPARE(arm_motors[motor_id].timer, arm_motors[motor_id].channel, duty_cycle);
+
+}
+
+//control all the arms
+void Arm_Set_All(int16_t* input_array)
+{
+	for (int i =0; i < 5; i++)
+	{
+		Arm_Set_Motor(i, input_array[i]);
+	}
+}
+
 // FreeRTOS Task Entry Point
 void motor_control_Run(void *argument)
 {
@@ -176,19 +237,36 @@ void motor_control_Run(void *argument)
     if (!initialised)
     {
         MotorControl_Init();
+        Arm_Motor_Init();
         initialised = true;
     }
 
     // freertos.c handles the osDelay(50) loop, so we pass 0.05s directly
-    MotorControl_Update(0.05f);
+    MotorControl_Update(0.05f); // Drive wheels
+
     if (flag == 1)
-       {
-       	//Put Arm code
-       }
-       else
-       {
-       	//Put LD code
-       }
+    {
+        // Snapshot pre-computed arm values from microros_main.c
+        double cmd[7];
+        taskENTER_CRITICAL();
+        for (int i = 0; i < 7; i++) {
+            cmd[i] = arm_cmd[i];
+        }
+        taskEXIT_CRITICAL();
+
+        // Pass directly to arm motors - zero math needed in motor_control!
+
+        Arm_Set_Motor(0, (int16_t)cmd[0]); // Base
+        Arm_Set_Motor(1, (int16_t)cmd[1]); // Shoulder
+        Arm_Set_Motor(2, (int16_t)cmd[2]); // Elbow
+        Arm_Set_Motor(3, (int16_t)cmd[3]); // Bevel 1 (w1 pre-computed in payload_cb)
+        Arm_Set_Motor(4, (int16_t)cmd[4]); // Bevel 2 (w2 pre-computed in payload_cb)
+//        Arm_Set_Motor(5, (int16_t)cmd[6]); // Linear actuator / Gripper (motors[5])
+    }
+    else
+    {
+        // Put LD code here
+    }
 }
 
 } // end extern "C"

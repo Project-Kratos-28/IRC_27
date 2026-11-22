@@ -5,7 +5,7 @@
 #include "cmsis_os2.h"
 
 /* --- Micro-ROS & Standard Includes --- */
-#include <stdbool.h>
+//#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include "iwdg.h"
@@ -78,16 +78,48 @@ volatile HAL_StatusTypeDef tx_ret;   // global, so Live Expressions can read it
 
 /* --- Subscriber Callbacks --- */
 void payload_cb(const void * msgin) {
-  (void)msgin;
-  const kratos_teerth_rohan_pandya_msgs__msg__ArmCmd * m =
+  const kratos_teerth_rohan_pandya_msgs__msg__ArmCmd * msg =
         (const kratos_teerth_rohan_pandya_msgs__msg__ArmCmd *)msgin;
 
-    taskENTER_CRITICAL();
-    flag = m->use_arm;
-    memcpy((void *)arm_cmd, m->arm_cmd, sizeof(arm_cmd));
-    taskEXIT_CRITICAL();
-  //  custom_status_msg.arm_cmd[x]; for array
-  // Add your arm callback logic here
+  if (msg == NULL) return;
+
+  // 1. Direct joint commands: Base (0), Shoulder (1), Elbow (2)
+  double m0 = msg->arm_cmd[0];
+  double m1 = msg->arm_cmd[1];
+  double m2 = msg->arm_cmd[2];
+
+  // 2. Bevel differential mixing for wrist: Pitch (3), Roll (4)
+  int32_t pitch = (int32_t)msg->arm_cmd[3];
+  int32_t roll  = -(int32_t)msg->arm_cmd[4];
+
+  int32_t w1 = pitch - roll;
+  int32_t w2 = pitch + roll;
+
+  // Proportional normalization if combined magnitude exceeds 255
+  int32_t abs_w1 = (w1 < 0) ? -w1 : w1;
+  int32_t abs_w2 = (w2 < 0) ? -w2 : w2;
+  int32_t max_mag = (abs_w1 > abs_w2) ? abs_w1 : abs_w2;
+
+  if (max_mag > 255) {
+    w1 = (w1 * 255) / max_mag;
+    w2 = (w2 * 255) / max_mag;
+  }
+
+  // 3. Auxiliary (5) and Linear Actuator / Gripper (6)
+  double m5 = msg->arm_cmd[5];
+  double m6 = msg->arm_cmd[6];
+
+  // 4. Atomically store pre-computed motor values into shared arm_cmd
+  taskENTER_CRITICAL();
+  flag = msg->use_arm;
+  arm_cmd[0] = m0;          // Base
+  arm_cmd[1] = m1;          // Shoulder
+  arm_cmd[2] = m2;          // Elbow
+  arm_cmd[3] = (double)w1;  // Pre-mixed Bevel 1
+  arm_cmd[4] = (double)w2;  // Pre-mixed Bevel 2
+  arm_cmd[5] = m5;          // Auxiliary
+  arm_cmd[6] = m6;          // Linear Actuator / Gripper
+  taskEXIT_CRITICAL();
 }
 
 void drive_cb(const void * msgin) {
@@ -99,13 +131,15 @@ void drive_cb(const void * msgin) {
     memcpy((void *)wheel_info, m->wheel_info, sizeof(wheel_info));
     taskEXIT_CRITICAL();
   //custom_status_msg.wheel_info[x]; for array
-  // Add your drive callback logic here
+    // Add your drive callback logic here
+
 }
 
 void misc_cb(const void * msgin) {
   (void)msgin;
   //  for array
   // Add your misc callback logic here
+
 }
 
 /* --- Lifecycle Functions --- */
@@ -248,6 +282,7 @@ void microros_main_Run(void *argument)
     osDelay(1);
   }
 }
+
 //backup code if smtg breaks
 
 

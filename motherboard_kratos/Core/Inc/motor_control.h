@@ -11,6 +11,7 @@ extern bool     motor_cmd_valid;
 extern volatile bool   flag;
 #ifndef ARM_WHEEL_VARS_DEFINED
 #define ARM_WHEEL_VARS_DEFINED
+#include <stdint.h>
 
 extern volatile double arm_cmd[7];
 extern volatile double wheel_info[8];
@@ -22,3 +23,6 @@ void motor_control_Run(void *argument);
 }
 #endif
 #endif /* MOTOR_CONTROL_H */
+
+extern int16_t arm_motor_inputs[7];
+
