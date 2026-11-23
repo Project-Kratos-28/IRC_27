@@ -22,3 +22,7 @@ motherboard_kratos/.settings/language.settings.xml
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# VSCode configuration
+.vscode/
+*/.vscode/

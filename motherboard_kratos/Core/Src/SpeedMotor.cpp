@@ -12,6 +12,7 @@ SpeedMotor::SpeedMotor(TIM_HandleTypeDef* pwmTim, uint32_t pwmChannel, uint32_t 
 }
 
 void SpeedMotor::begin() {
+    if (!pwmTim_ || !dirPort_) return;
     HAL_TIM_PWM_Start(pwmTim_, pwmChannel_);
     __HAL_TIM_MOE_ENABLE(pwmTim_); // Enables TIM1 master PWM outputs
     stop();
@@ -32,9 +33,13 @@ void SpeedMotor::update(float currentSpeedRPM, float dt) {
 }
 
 void SpeedMotor::stop() {
-    HAL_GPIO_WritePin(dirPort_, dirPin1_, GPIO_PIN_RESET);
-    HAL_GPIO_WritePin(dirPort_, dirPin2_, GPIO_PIN_RESET);
-    __HAL_TIM_SET_COMPARE(pwmTim_, pwmChannel_, 0);
+    if (dirPort_) {
+        HAL_GPIO_WritePin(dirPort_, dirPin1_, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(dirPort_, dirPin2_, GPIO_PIN_RESET);
+    }
+    if (pwmTim_) {
+        __HAL_TIM_SET_COMPARE(pwmTim_, pwmChannel_, 0);
+    }
     lastOutput_ = 0.0f;
 }
 
@@ -47,23 +52,8 @@ float SpeedMotor::getTargetSpeed() const {
 }
 
 void SpeedMotor::driveOutput(float pidOutput) {
-    // Direction
-    // if (pidOutput >= 0.0f) {
-    //     HAL_GPIO_WritePin(dirPort_, dirPin1_, GPIO_PIN_SET);
-    //     HAL_GPIO_WritePin(dirPort_, dirPin2_, GPIO_PIN_RESET);
-    // } else {
-    //     HAL_GPIO_WritePin(dirPort_, dirPin1_, GPIO_PIN_RESET);
-    //     HAL_GPIO_WritePin(dirPort_, dirPin2_, GPIO_PIN_SET);
-    // }
+    if (!pwmTim_ || !dirPort_) return;
 
-    // // Magnitude -> duty cycle
-    // float duty = (pidOutput < 0.0f) ? -pidOutput : pidOutput; // 0..100
-    // if (duty > 100.0f) duty = 100.0f;
-
-    // uint32_t compareValue = static_cast<uint32_t>((duty / 100.0f) * static_cast<float>(pwmPeriod_));
-    // __HAL_TIM_SET_COMPARE(pwmTim_, pwmChannel_, compareValue);
-
-    
     // 1. Single DIR Pin Logic (High = Forward, Low = Reverse)
     if (pidOutput >= 0.0f) {
         HAL_GPIO_WritePin(dirPort_, dirPin1_, GPIO_PIN_SET);

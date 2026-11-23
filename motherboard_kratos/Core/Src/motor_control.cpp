@@ -37,15 +37,14 @@ volatile float g_current_rpm = 0.0f;
 // =====================================================
 // HARDWARE PERIPHERAL DECLARATIONS
 // =====================================================
-// --- ENCODER TIMERS ---
+// --- ENCODER TIMERS (Drive Subsystem) ---
 extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim5;
-extern TIM_HandleTypeDef htim8;
 
-// --- PWM TIMERS ---
+// --- PWM TIMERS (Drive Subsystem) ---
 extern TIM_HandleTypeDef htim14;
 extern TIM_HandleTypeDef htim13;
 extern TIM_HandleTypeDef htim15;
@@ -59,16 +58,16 @@ static SpeedMotor drive_motors[6] = {
     SpeedMotor(&htim13, TIM_CHANNEL_1, 3199, GPIOG, GPIO_PIN_8, GPIO_PIN_8, 2.0f, 1.0f, 0.0f), // Motor 0
     SpeedMotor(&htim14, TIM_CHANNEL_1, 3199, GPIOG, GPIO_PIN_9, GPIO_PIN_9, 2.0f, 1.0f, 0.0f), // Motor 1
     SpeedMotor(&htim15, TIM_CHANNEL_2, 3199, GPIOG, GPIO_PIN_4, GPIO_PIN_4, 2.0f, 1.0f, 0.0f), // Motor 2
-    SpeedMotor(&htim15, TIM_CHANNEL_1, 3199, GPIOD, GPIO_PIN_11, GPIO_PIN_11, 2.0f, 1.0f, 0.0f), // Motor 3
+    SpeedMotor(nullptr, 0, 0, nullptr, 0, 0, 0.0f, 0.0f, 0.0f),                                 // Motor 3 (Decoupled from Arm Base PE5/PD11)
     SpeedMotor(&htim16, TIM_CHANNEL_1, 3199, GPIOG, GPIO_PIN_6, GPIO_PIN_6, 2.0f, 1.0f, 0.0f), // Motor 4
     SpeedMotor(&htim17, TIM_CHANNEL_1, 3199, GPIOG, GPIO_PIN_7, GPIO_PIN_7, 2.0f, 1.0f, 0.0f)  // Motor 5
 };
 
-static TIM_HandleTypeDef* drive_encoders[6] = {&htim1, &htim2, &htim3, &htim4, &htim5, &htim8};
+static TIM_HandleTypeDef* drive_encoders[6] = {&htim1, &htim2, &htim3, &htim4, &htim5, nullptr};
 
 static uint16_t drive_prev_counts[6] = {0};
 static float current_rpms[6] = {0.0f};
-
+uint8_t pg6_state=0;
 // Live target speeds updated by ROS 2 (Initialized to 0.0f for safety)
 static float target_rpms[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
@@ -80,6 +79,8 @@ static float ReadDriveSpeedRPM(uint8_t motor_id, float dt_seconds)
     if (dt_seconds <= 0.0f) return 0.0f;
 
     TIM_HandleTypeDef* htim = drive_encoders[motor_id];
+    if (htim == nullptr) return 0.0f;
+
     uint16_t current_count = (uint16_t)__HAL_TIM_GET_COUNTER(htim);
 
     int16_t delta_ticks = (int16_t)(current_count - drive_prev_counts[motor_id]);
@@ -114,10 +115,13 @@ void MotorControl_Init(void)
     HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
     HAL_TIM_Encoder_Start(&htim4, TIM_CHANNEL_ALL);
     HAL_TIM_Encoder_Start(&htim5, TIM_CHANNEL_ALL);
-    HAL_TIM_Encoder_Start(&htim8, TIM_CHANNEL_ALL);
 
     for (int i = 0; i < 6; i++) {
-        drive_prev_counts[i] = (uint16_t)__HAL_TIM_GET_COUNTER(drive_encoders[i]);
+        if (drive_encoders[i] != nullptr) {
+            drive_prev_counts[i] = (uint16_t)__HAL_TIM_GET_COUNTER(drive_encoders[i]);
+        } else {
+            drive_prev_counts[i] = 0;
+        }
     }
 
 }
@@ -171,6 +175,7 @@ void MotorControl_Update(float dt_seconds)
 // =====================================================
 // USEFUL DEFINITIONS FOR ARM CODE
 // =====================================================
+extern TIM_HandleTypeDef htim8;
 
 typedef struct {
 
@@ -182,27 +187,38 @@ typedef struct {
 	} ArmMotor;
 
 //arm motor definition
-ArmMotor arm_motors[6] =
+ArmMotor arm_motors[5] =
 	{
-	    {&htim8, TIM_CHANNEL_1, GPIOD, GPIO_PIN_7}, //PC6
-	    {&htim8, TIM_CHANNEL_2, GPIOD, GPIO_PIN_8}, //PC7
-	    {&htim8, TIM_CHANNEL_3, GPIOD, GPIO_PIN_9}, //PC8
-	    {&htim8, TIM_CHANNEL_4, GPIOD, GPIO_PIN_10}, //PC9
-	    {&htim15, TIM_CHANNEL_1, GPIOD, GPIO_PIN_11}, //PE5
+	    {&htim8, TIM_CHANNEL_1, GPIOD, GPIO_PIN_7},  // conn_set_1: PC6 (Bevel 1 PWM), PD7 (Bevel 1 DIR)
+	    {&htim8, TIM_CHANNEL_2, nullptr, 0},         // conn_set_1: PC7 (Bevel 2 PWM), DIR: x (TBD)
+	    {&htim8, TIM_CHANNEL_3, nullptr, 0},         // conn_set_2: PC8 (Shoulder PWM), DIR: x (TBD)
+	    {&htim8, TIM_CHANNEL_4, GPIOD, GPIO_PIN_10}, // conn_set_2: PC9 (Elbow PWM), PD10 (Elbow DIR)
+	    {&htim15, TIM_CHANNEL_1, GPIOD, GPIO_PIN_11}, // conn_set_3: PE5 (Base PWM), PD11 (Base DIR)
 //		{, TIM_CHANNEL_, GPIOD, GPIO_PIN_}
 	    // Sixth motor goes here
 	};
 
+typedef enum {
+        BEVEL_1         = 0,  // conn_set_1: PC6, PD7
+        BEVEL_2         = 1,  // conn_set_1: PC7, DIR x
+        SHOULDER        = 2,  // conn_set_2: PC8, DIR x
+        ELBOW           = 3,  // conn_set_2: PC9, PD10
+        BASE            = 4,  // conn_set_3: PE5, PD11
+        LINEAR_ACTUATOR = 5,  // conn_set_3: x, x
+        GRIPPER         = 6,
+        ARM_MOTOR_COUNT       // Automatically equals 7 (useful for array sizing / loops)
+} ArmMotorID;
+
 //set all the motors
 void Arm_Motor_Init()
 {
-
-	HAL_TIM_PWM_Start(arm_motors[0].timer, arm_motors[0].channel); //PC6
-	HAL_TIM_PWM_Start(arm_motors[1].timer, arm_motors[1].channel); //PC7
-	HAL_TIM_PWM_Start(arm_motors[2].timer, arm_motors[2].channel); //PC8
-	HAL_TIM_PWM_Start(arm_motors[3].timer, arm_motors[3].channel); //PC9
-	HAL_TIM_PWM_Start(arm_motors[4].timer, arm_motors[4].channel); //PE5
-
+	for (int i = 0; i < 5; i++) {
+		if (arm_motors[i].timer != nullptr) {
+			HAL_TIM_PWM_Start(arm_motors[i].timer, arm_motors[i].channel);
+		}
+	}
+	__HAL_TIM_MOE_ENABLE(&htim8);
+	__HAL_TIM_MOE_ENABLE(&htim15);
 }
 
 //code to control one motor
@@ -214,8 +230,15 @@ void Arm_Set_Motor(uint8_t motor_id, int16_t input)
 	duty_cycle = (duty_cycle > 255) ? 255 : duty_cycle;
 
 	//decide direction (negative means pin = 0 means backwards)
-	HAL_GPIO_WritePin(arm_motors[motor_id].dir_port, arm_motors[motor_id].dir_pin, (input > 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-	__HAL_TIM_SET_COMPARE(arm_motors[motor_id].timer, arm_motors[motor_id].channel, duty_cycle);
+	if (arm_motors[motor_id].dir_port != nullptr) {
+		HAL_GPIO_WritePin(arm_motors[motor_id].dir_port, arm_motors[motor_id].dir_pin, (input > 0) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+	}
+
+	if (arm_motors[motor_id].timer != nullptr) {
+		uint32_t arr = __HAL_TIM_GET_AUTORELOAD(arm_motors[motor_id].timer);
+		uint32_t compare_val = ((uint32_t)duty_cycle * arr) / 255;
+		__HAL_TIM_SET_COMPARE(arm_motors[motor_id].timer, arm_motors[motor_id].channel, compare_val);
+	}
 
 }
 
@@ -255,17 +278,21 @@ void motor_control_Run(void *argument)
         taskEXIT_CRITICAL();
 
         // Pass directly to arm motors - zero math needed in motor_control!
-
-        Arm_Set_Motor(0, (int16_t)cmd[0]); // Base
-        Arm_Set_Motor(1, (int16_t)cmd[1]); // Shoulder
-        Arm_Set_Motor(2, (int16_t)cmd[2]); // Elbow
-        Arm_Set_Motor(3, (int16_t)cmd[3]); // Bevel 1 (w1 pre-computed in payload_cb)
-        Arm_Set_Motor(4, (int16_t)cmd[4]); // Bevel 2 (w2 pre-computed in payload_cb)
+        pg6_state=(GPIOG->ODR&GPIO_PIN_7)?1:0;
+        Arm_Set_Motor(BASE, (int16_t)cmd[0]);     // Base (conn_set_3: PE5, PD11)
+        Arm_Set_Motor(SHOULDER, (int16_t)cmd[1]); // Shoulder (conn_set_2: PC8, DIR x)
+        Arm_Set_Motor(ELBOW, (int16_t)cmd[2]);    // Elbow (conn_set_2: PC9, PD10)
+        Arm_Set_Motor(BEVEL_1, (int16_t)cmd[3]);  // Bevel 1 (conn_set_1: PC6, PD7)
+        Arm_Set_Motor(BEVEL_2, (int16_t)cmd[4]);  // Bevel 2 (conn_set_1: PC7, DIR x)
 //        Arm_Set_Motor(5, (int16_t)cmd[6]); // Linear actuator / Gripper (motors[5])
     }
     else
     {
-        // Put LD code here
+        Arm_Set_Motor(BASE, 0);
+        Arm_Set_Motor(SHOULDER, 0);
+        Arm_Set_Motor(ELBOW, 0);
+        Arm_Set_Motor(BEVEL_1, 0);
+        Arm_Set_Motor(BEVEL_2, 0);
     }
 }
 
