@@ -67,7 +67,6 @@ static TIM_HandleTypeDef* drive_encoders[6] = {&htim1, &htim2, &htim3, &htim4, &
 
 static uint16_t drive_prev_counts[6] = {0};
 static float current_rpms[6] = {0.0f};
-uint8_t pg6_state=0;
 // Live target speeds updated by ROS 2 (Initialized to 0.0f for safety)
 static float target_rpms[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
@@ -190,12 +189,10 @@ typedef struct {
 ArmMotor arm_motors[5] =
 	{
 	    {&htim8, TIM_CHANNEL_1, GPIOD, GPIO_PIN_7},  // conn_set_1: PC6 (Bevel 1 PWM), PD7 (Bevel 1 DIR)
-	    {&htim8, TIM_CHANNEL_2, nullptr, 0},         // conn_set_1: PC7 (Bevel 2 PWM), DIR: x (TBD)
-	    {&htim8, TIM_CHANNEL_3, nullptr, 0},         // conn_set_2: PC8 (Shoulder PWM), DIR: x (TBD)
+	    {&htim8, TIM_CHANNEL_2, GPIOB, GPIO_PIN_8},  // conn_set_1: PC7 (Bevel 2 PWM), PB8 (Bevel 2 DIR)
+	    {&htim8, TIM_CHANNEL_3, GPIOB, GPIO_PIN_9},  // conn_set_2: PC8 (Shoulder PWM), PB9 (Shoulder DIR)
 	    {&htim8, TIM_CHANNEL_4, GPIOD, GPIO_PIN_10}, // conn_set_2: PC9 (Elbow PWM), PD10 (Elbow DIR)
 	    {&htim15, TIM_CHANNEL_1, GPIOD, GPIO_PIN_11}, // conn_set_3: PE5 (Base PWM), PD11 (Base DIR)
-//		{, TIM_CHANNEL_, GPIOD, GPIO_PIN_}
-	    // Sixth motor goes here
 	};
 
 typedef enum {
@@ -204,7 +201,7 @@ typedef enum {
         SHOULDER        = 2,  // conn_set_2: PC8, DIR x
         ELBOW           = 3,  // conn_set_2: PC9, PD10
         BASE            = 4,  // conn_set_3: PE5, PD11
-        LINEAR_ACTUATOR = 5,  // conn_set_3: x, x
+        LINEAR_ACTUATOR = 5,  // conn_set_3: PC10, PC11
         GRIPPER         = 6,
         ARM_MOTOR_COUNT       // Automatically equals 7 (useful for array sizing / loops)
 } ArmMotorID;
@@ -278,13 +275,23 @@ void motor_control_Run(void *argument)
         taskEXIT_CRITICAL();
 
         // Pass directly to arm motors - zero math needed in motor_control!
-        pg6_state=(GPIOG->ODR&GPIO_PIN_7)?1:0;
         Arm_Set_Motor(BASE, (int16_t)cmd[0]);     // Base (conn_set_3: PE5, PD11)
-        Arm_Set_Motor(SHOULDER, (int16_t)cmd[1]); // Shoulder (conn_set_2: PC8, DIR x)
+        Arm_Set_Motor(SHOULDER, (int16_t)cmd[1]); // Shoulder (conn_set_2: PC8, PB9)
         Arm_Set_Motor(ELBOW, (int16_t)cmd[2]);    // Elbow (conn_set_2: PC9, PD10)
         Arm_Set_Motor(BEVEL_1, (int16_t)cmd[3]);  // Bevel 1 (conn_set_1: PC6, PD7)
-        Arm_Set_Motor(BEVEL_2, (int16_t)cmd[4]);  // Bevel 2 (conn_set_1: PC7, DIR x)
-//        Arm_Set_Motor(5, (int16_t)cmd[6]); // Linear actuator / Gripper (motors[5])
+        Arm_Set_Motor(BEVEL_2, (int16_t)cmd[4]);  // Bevel 2 (conn_set_1: PC7, PB8)
+
+        // Linear Actuator (Cytron MD10A: PC10 PWM, PC11 DIR)
+        if (cmd[5] > 0) {
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_SET);   // Extend
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, GPIO_PIN_SET);   // PWM ON
+        } else if (cmd[5] < 0) {
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET); // Retract
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, GPIO_PIN_SET);   // PWM ON
+        } else {
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, GPIO_PIN_RESET); // Stop
+            HAL_GPIO_WritePin(GPIOC, GPIO_PIN_11, GPIO_PIN_RESET);
+        }
     }
     else
     {
@@ -293,6 +300,7 @@ void motor_control_Run(void *argument)
         Arm_Set_Motor(ELBOW, 0);
         Arm_Set_Motor(BEVEL_1, 0);
         Arm_Set_Motor(BEVEL_2, 0);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_10, GPIO_PIN_RESET); // Stop Linear Actuator
     }
 }
 
