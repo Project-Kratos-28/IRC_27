@@ -13,7 +13,8 @@
 class SpeedMotor {
 public:
     // pwmTim / pwmChannel : timer + channel wired to the driver's PWM input
-    // pwmPeriod           : ARR value of that timer (= 100% duty cycle)
+    // pwmPeriod           : ARR value of that timer (= 100% duty cycle).
+    //                       0 = read the timer's ARR in begin().
     // dirPort/dirPin1/dirPin2 : two GPIOs for direction (H-bridge IN1/IN2 style)
     // kp, ki, kd           : starting PID gains (tune on the bench first)
     SpeedMotor(TIM_HandleTypeDef* pwmTim, uint32_t pwmChannel, uint32_t pwmPeriod,
@@ -30,7 +31,7 @@ public:
     // dt: seconds since the previous call.
     void update(float currentSpeedRPM, float dt);
 
-    void stop();
+    void stop();                               // PWM off + PID state reset
     float getOutput() const;                   // last PID output, -100..100 (%)
     float getTargetSpeed() const;
 

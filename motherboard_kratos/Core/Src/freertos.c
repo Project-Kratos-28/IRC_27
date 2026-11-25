@@ -236,8 +236,8 @@ void StartTask02(void *argument)
 
   for (;;)
   {
-	  motor_control_Run(argument);
-	  osDelay(50);
+	  motor_control_Run(argument);   /* drive + steer + arm; measures its own dt */
+	  osDelay(10);                   /* 100 Hz: steering PID needs a faster loop than 20 Hz */
   }
   /* USER CODE END StartTask02 */
 }

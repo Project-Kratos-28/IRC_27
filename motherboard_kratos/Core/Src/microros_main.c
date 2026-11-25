@@ -19,15 +19,22 @@
 #include <rmw_microros/rmw_microros.h>
 #include <std_msgs/msg/bool.h>
 #include <std_msgs/msg/float32_multi_array.h>
+#include <std_msgs/msg/float64_multi_array.h>
 #include <geometry_msgs/msg/twist.h>
 #include <kratos_teerth_rohan_pandya_msgs/msg/arm_cmd.h>
 #include <kratos_teerth_rohan_pandya_msgs/msg/wheel_cmd.h>
 #include "motor_control.h"
+#include "swerve_drive.h"
 #include <stdbool.h>
 
 /* --- Macros --- */
 #define SPIN_TIMEOUT_MS   10
 #define PING_PERIOD_MS    1000
+
+/* Drive command from electronics_drive_high_level (drive_controller, branch dev):
+ * std_msgs/Float64MultiArray, 8 values: [steer deg FL,FR,RL,RR | rpm FL,FR,RL,RR] */
+#define DRIVE_CMD_TOPIC   "drive_controller/rover"
+#define DRIVE_CMD_LEN     (2 * SWERVE_NUM_WHEELS)
 extern IWDG_HandleTypeDef hiwdg1; 
 #define WDG_FEED()        HAL_IWDG_Refresh(&hiwdg1)
 #define RCCHECK(fn)  do { WDG_FEED(); if ((fn) != RCL_RET_OK) return false; } while (0)
@@ -85,7 +92,8 @@ rcl_subscription_t drive_message_subscriber;
 rcl_subscription_t misc_message_subscriber;
 
 kratos_teerth_rohan_pandya_msgs__msg__ArmCmd   arm_msg;
-kratos_teerth_rohan_pandya_msgs__msg__WheelCmd wheel_msg;
+std_msgs__msg__Float64MultiArray               drive_msg;
+static double                                  drive_msg_buf[DRIVE_CMD_LEN]; /* static storage, no malloc */
 std_msgs__msg__Bool                            misc_msg;
 
 
@@ -146,16 +154,11 @@ void payload_cb(const void * msgin) {
 }
 
 void drive_cb(const void * msgin) {
-  (void)msgin;
-  const kratos_teerth_rohan_pandya_msgs__msg__WheelCmd * m =
-        (const kratos_teerth_rohan_pandya_msgs__msg__WheelCmd *)msgin;
+  const std_msgs__msg__Float64MultiArray * m = (const std_msgs__msg__Float64MultiArray *)msgin;
+  if (m == NULL || m->data.size < DRIVE_CMD_LEN) return;   /* malformed: ignore, timeout will stop us */
 
-    taskENTER_CRITICAL();
-    memcpy((void *)wheel_info, m->wheel_info, sizeof(wheel_info));
-    taskEXIT_CRITICAL();
-  //custom_status_msg.wheel_info[x]; for array
-    // Add your drive callback logic here
-
+  /* data[0..3] steering deg, data[4..7] wheel rpm (wheel order FL, FR, RL, RR) */
+  Swerve_SetCommand(&m->data.data[0], &m->data.data[SWERVE_NUM_WHEELS]);
 }
 
 void misc_cb(const void * msgin) {
@@ -182,14 +185,22 @@ static bool ros_create(void)
   RCCHECK(rclc_subscription_init_best_effort(&payload_message_subscriber, &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(kratos_teerth_rohan_pandya_msgs, msg, ArmCmd), "payload_cmd"));
   RCCHECK(rclc_subscription_init_best_effort(&drive_message_subscriber, &node,
-            ROSIDL_GET_MSG_TYPE_SUPPORT(kratos_teerth_rohan_pandya_msgs, msg, WheelCmd), "cmd_vel"));
+            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray), DRIVE_CMD_TOPIC));
   RCCHECK(rclc_subscription_init_best_effort(&misc_message_subscriber, &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "misc_topic"));
+
+  /* Float64MultiArray has unbounded sequences: point them at static storage.
+   * layout.dim gets capacity 0, so senders must leave the layout empty (the
+   * high-level drive_controller does). */
+  memset(&drive_msg, 0, sizeof(drive_msg));
+  drive_msg.data.data     = drive_msg_buf;
+  drive_msg.data.size     = 0;
+  drive_msg.data.capacity = DRIVE_CMD_LEN;
 
   /* 3 handles for the 3 subscribers */
   RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &payload_message_subscriber, &arm_msg,   &payload_cb, ON_NEW_DATA));
-  RCCHECK(rclc_executor_add_subscription(&executor, &drive_message_subscriber,   &wheel_msg, &drive_cb,   ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &drive_message_subscriber,   &drive_msg, &drive_cb,   ON_NEW_DATA));
   RCCHECK(rclc_executor_add_subscription(&executor, &misc_message_subscriber,    &misc_msg,  &misc_cb,    ON_NEW_DATA));
   return true;
 }
@@ -299,7 +310,7 @@ void microros_main_Run(void *argument)
       case AGENT_DISCONNECTED:
         ros_destroy();
         taskENTER_CRITICAL();
-        motor_cmd_valid = false;
+        Swerve_ClearCommand();   /* drive stops next cycle; steering holds */
         flag = false;
         memset((void *)arm_cmd, 0, sizeof(arm_cmd));
         memset((void *)ld_cmd,  0, sizeof(ld_cmd));
