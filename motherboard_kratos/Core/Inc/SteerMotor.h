@@ -47,6 +47,7 @@ public:
     void setDeadband(float deg);                       // default 0.5 deg
     void setMaxRate(float degPerSec);                  // default 90 deg/s, 0 = no limit
     void setHomeRaw(uint16_t homeRaw);                 // re-calibrate at runtime
+    void setMaxDuty(float percent);                    // PWM cap, % (= 100 * V_rated / V_supply)
 
     // Open-loop drive (-100..100 %) for the polarity check. Positive should
     // raise the angle. Re-seeds the ramp so closed-loop resumes from here.

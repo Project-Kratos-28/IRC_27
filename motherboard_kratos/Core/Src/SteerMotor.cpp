@@ -16,6 +16,8 @@ SteerMotor::SteerMotor(TIM_HandleTypeDef* pwmTim, uint32_t pwmChannel, uint32_t 
     motor_.setMotorDirection(motorDir);
 }
 
+void SteerMotor::setMaxDuty(float percent) { motor_.setMaxDuty(percent); }
+
 void SteerMotor::driveOpenLoop(float duty) {
     motor_.driveOpenLoop(duty);
     rampInit_ = false;

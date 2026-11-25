@@ -56,10 +56,10 @@ extern volatile float g_steer_kp, g_steer_ki, g_steer_kd;   // per degree of err
 
 extern volatile float    g_drive_target_rpm[SWERVE_NUM_WHEELS]; // after steer gating
 extern volatile float    g_drive_rpm[SWERVE_NUM_WHEELS];        // measured, rover frame
-extern volatile float    g_drive_duty[SWERVE_NUM_WHEELS];       // -100..100 %
+extern volatile float    g_drive_duty[SWERVE_NUM_WHEELS];       // % , capped at +/-81.8 (18 V of 22 V)
 extern volatile float    g_steer_target_deg[SWERVE_NUM_WHEELS];
 extern volatile float    g_steer_deg[SWERVE_NUM_WHEELS];        // measured
-extern volatile float    g_steer_duty[SWERVE_NUM_WHEELS];       // -100..100 %
+extern volatile float    g_steer_duty[SWERVE_NUM_WHEELS];       // % , capped at +/-54.5 (12 V of 22 V)
 extern volatile uint32_t g_steer_raw[SWERVE_NUM_WHEELS];        // AS5600 raw 0..4095 (use to calibrate home)
 extern volatile uint32_t g_steer_enc_err[SWERVE_NUM_WHEELS];    // failed I2C reads since boot
 extern volatile uint32_t g_steer_enc_ok;      // bit n = wheel n encoder read OK last cycle

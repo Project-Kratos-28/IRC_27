@@ -8,7 +8,7 @@ PositionMotor::PositionMotor(TIM_HandleTypeDef* pwmTim, uint32_t pwmChannel, uin
     : pwmTim_(pwmTim), pwmChannel_(pwmChannel), pwmPeriod_(pwmPeriod),
       dirPort_(dirPort), dirPin_(dirPin),
       pid_(kp, ki, kd, -100.0f, 100.0f),
-      lastOutput_(0.0f), motorDir_(1)
+      lastOutput_(0.0f), motorDir_(1), maxDuty_(100.0f)
 {
     pid_.enableWrap(positionRange); // Enabled by default for rotary motors
 
@@ -52,6 +52,17 @@ void PositionMotor::setMotorDirection(int dir) {
     motorDir_ = (dir >= 0) ? 1 : -1;
 }
 
+void PositionMotor::setMaxDuty(float percent) {
+    if (percent < 0.0f)   percent = 0.0f;
+    if (percent > 100.0f) percent = 100.0f;
+    maxDuty_ = percent;
+    pid_.setOutputLimits(-percent, percent);
+}
+
+float PositionMotor::getMaxDuty() const {
+    return maxDuty_;
+}
+
 void PositionMotor::driveOpenLoop(float duty) {
     pid_.reset();
     lastOutput_ = duty;
@@ -89,14 +100,14 @@ void PositionMotor::driveOutput(float pidOutput) {
 
     // 2. Magnitude & Stiction threshold
     float duty = std::abs(pidOutput);
-    if (duty > 100.0f) duty = 100.0f;
+    if (duty > maxDuty_) duty = maxDuty_;   // voltage clamp (also covers driveOpenLoop)
 
     // Overcomes static motor friction. Only applied when the PID is actually
     // asking for motion - inside the deadband the PID returns exactly 0, so
     // the motor rests instead of being kicked to MIN_DUTY back and forth.
     const float MIN_DUTY = 25.0f;
     if (duty > 0.0f && duty < MIN_DUTY) {
-        duty = MIN_DUTY;
+        duty = (MIN_DUTY < maxDuty_) ? MIN_DUTY : maxDuty_;  // never exceed the clamp
     }
 
     uint32_t compareValue = static_cast<uint32_t>((duty / 100.0f) * static_cast<float>(pwmPeriod_));

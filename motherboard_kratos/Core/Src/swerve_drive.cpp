@@ -48,6 +48,17 @@ extern I2C_HandleTypeDef hi2c1;
                                         // (catches a reversed STEER motorDir / encoderDir before it
                                         //  winds the wheel into the hard stop forever)
 
+// Motor voltage clamp: the battery is above both motors' rated voltage, so PWM
+// duty is capped at V_rated / V_supply. That makes the AVERAGE voltage at the
+// motor equal its rating. Applied in the motor classes and as the PID limit.
+#define SUPPLY_VOLTAGE          22.0f   // V, battery
+#define DRIVE_MOTOR_RATED_V     18.0f   // V -> max duty 81.8 %
+#define STEER_MOTOR_RATED_V     12.0f   // V -> max duty 54.5 %
+#define DRIVE_MAX_DUTY          (100.0f * DRIVE_MOTOR_RATED_V / SUPPLY_VOLTAGE)
+#define STEER_MAX_DUTY          (100.0f * STEER_MOTOR_RATED_V / SUPPLY_VOLTAGE)
+static_assert(DRIVE_MOTOR_RATED_V <= SUPPLY_VOLTAGE && STEER_MOTOR_RATED_V <= SUPPLY_VOLTAGE,
+              "rated voltage above supply: duty cap would exceed 100 %");
+
 // PCA9548A mux + AS5600
 #define PCA9548A_I2C_ADDR       (0x70 << 1)
 #define AS5600_I2C_ADDR         (0x36 << 1)
@@ -278,6 +289,8 @@ void Swerve_Init(void)
         HAL_TIM_Encoder_Start(WHEEL_CFG[i].driveEncTim, TIM_CHANNEL_ALL);
         ticks_per_rev[i] = DRIVE_ENC_PPR * DRIVE_GEAR_RATIO *
                            EncoderEdgeMultiplier(WHEEL_CFG[i].driveEncTim);
+        drive_motors[i].setMaxDuty(DRIVE_MAX_DUTY);
+        steer_motors[i].setMaxDuty(STEER_MAX_DUTY);
         drive_motors[i].begin();
         steer_motors[i].begin();
     }

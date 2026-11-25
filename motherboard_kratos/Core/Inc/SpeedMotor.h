@@ -32,6 +32,12 @@ public:
     void update(float currentSpeedRPM, float dt);
 
     void stop();                               // PWM off + PID state reset
+
+    // Upper limit on PWM duty, 0..100 %. Use it when the motor's rated voltage is
+    // below the supply: maxDuty = 100 * V_rated / V_supply. Also becomes the PID
+    // output limit, so the integral can't wind up against the clamp. Default 100.
+    void setMaxDuty(float percent);
+    float getMaxDuty() const;
     float getOutput() const;                   // last PID output, -100..100 (%)
     float getTargetSpeed() const;
 
@@ -46,6 +52,7 @@ private:
 
     PID pid_;
     float lastOutput_;
+    float maxDuty_;     // % (voltage clamp)
 
     void driveOutput(float pidOutput);
 };

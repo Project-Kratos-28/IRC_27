@@ -52,6 +52,12 @@ public:
     // check. Resets the PID so switching back to update() doesn't jump.
     void driveOpenLoop(float duty);
 
+    // Upper limit on PWM duty, 0..100 %. Use it when the motor's rated voltage is
+    // below the supply: maxDuty = 100 * V_rated / V_supply. Also becomes the PID
+    // output limit, so the integral can't wind up against the clamp. Default 100.
+    void setMaxDuty(float percent);
+    float getMaxDuty() const;
+
     float getOutput() const;                   // last output, -100..100 (%)
     float getTargetPosition() const;
 
@@ -69,6 +75,7 @@ private:
     PID pid_;
     float lastOutput_;
     int motorDir_;
+    float maxDuty_;     // % (voltage clamp)
 
     void driveOutput(float pidOutput); // -100..100 -> direction pins + PWM duty
 };

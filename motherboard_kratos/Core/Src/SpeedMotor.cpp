@@ -6,7 +6,7 @@ SpeedMotor::SpeedMotor(TIM_HandleTypeDef* pwmTim, uint32_t pwmChannel, uint32_t 
     : pwmTim_(pwmTim), pwmChannel_(pwmChannel), pwmPeriod_(pwmPeriod),
       dirPort_(dirPort), dirPin1_(dirPin1), dirPin2_(dirPin2),
       pid_(kp, ki, kd, -100.0f, 100.0f),
-      lastOutput_(0.0f)
+      lastOutput_(0.0f), maxDuty_(100.0f)
 {
     // No wrap here - speed is not circular like an absolute position is.
 }
@@ -47,6 +47,17 @@ void SpeedMotor::stop() {
     pid_.reset(); // drop stale integral so restarting doesn't lurch
 }
 
+void SpeedMotor::setMaxDuty(float percent) {
+    if (percent < 0.0f)   percent = 0.0f;
+    if (percent > 100.0f) percent = 100.0f;
+    maxDuty_ = percent;
+    pid_.setOutputLimits(-percent, percent);
+}
+
+float SpeedMotor::getMaxDuty() const {
+    return maxDuty_;
+}
+
 float SpeedMotor::getOutput() const {
     return lastOutput_;
 }
@@ -65,9 +76,9 @@ void SpeedMotor::driveOutput(float pidOutput) {
         HAL_GPIO_WritePin(dirPort_, dirPin1_, GPIO_PIN_RESET);
     }
 
-    // 2. PWM Duty Cycle (0 to 100%)
+    // 2. PWM Duty Cycle (0 to maxDuty_ %, voltage clamp)
     float duty = (pidOutput < 0.0f) ? -pidOutput : pidOutput;
-    if (duty > 100.0f) duty = 100.0f;
+    if (duty > maxDuty_) duty = maxDuty_;
 
     // Convert duty percentage to Timer Compare Register value (ARR)
     uint32_t compareValue = static_cast<uint32_t>((duty / 100.0f) * static_cast<float>(pwmPeriod_));
