@@ -24,7 +24,7 @@
 #include <kratos_teerth_rohan_pandya_msgs/msg/arm_cmd.h>
 #include <kratos_teerth_rohan_pandya_msgs/msg/wheel_cmd.h>
 #include "motor_control.h"
-#include "swerve_drive.h"
+#include "drive.h"
 #include <stdbool.h>
 
 /* --- Macros --- */
@@ -34,7 +34,7 @@
 /* Drive command from electronics_drive_high_level (drive_controller, branch dev):
  * std_msgs/Float64MultiArray, 8 values: [steer deg FL,FR,RL,RR | rpm FL,FR,RL,RR] */
 #define DRIVE_CMD_TOPIC   "drive_controller/rover"
-#define DRIVE_CMD_LEN     (2 * SWERVE_NUM_WHEELS)
+#define DRIVE_CMD_LEN     (2 * DRIVE_NUM_WHEELS)
 extern IWDG_HandleTypeDef hiwdg1; 
 #define WDG_FEED()        HAL_IWDG_Refresh(&hiwdg1)
 #define RCCHECK(fn)  do { WDG_FEED(); if ((fn) != RCL_RET_OK) return false; } while (0)
@@ -158,7 +158,7 @@ void drive_cb(const void * msgin) {
   if (m == NULL || m->data.size < DRIVE_CMD_LEN) return;   /* malformed: ignore, timeout will stop us */
 
   /* data[0..3] steering deg, data[4..7] wheel rpm (wheel order FL, FR, RL, RR) */
-  Swerve_SetCommand(&m->data.data[0], &m->data.data[SWERVE_NUM_WHEELS]);
+  Drive_SetCommand(&m->data.data[0], &m->data.data[DRIVE_NUM_WHEELS]);
 }
 
 void misc_cb(const void * msgin) {
@@ -310,7 +310,7 @@ void microros_main_Run(void *argument)
       case AGENT_DISCONNECTED:
         ros_destroy();
         taskENTER_CRITICAL();
-        Swerve_ClearCommand();   /* drive stops next cycle; steering holds */
+        Drive_ClearCommand();   /* drive stops next cycle; steering holds */
         flag = false;
         memset((void *)arm_cmd, 0, sizeof(arm_cmd));
         memset((void *)ld_cmd,  0, sizeof(ld_cmd));

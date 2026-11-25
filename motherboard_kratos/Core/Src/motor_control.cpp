@@ -3,7 +3,7 @@ extern "C" {
     #include <rclc/executor.h>
 }
 #include "motor_control.h"
-#include "swerve_drive.h"
+#include "drive.h"
 #include "main.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -111,7 +111,7 @@ void motor_control_Run(void *argument)
     static uint32_t last_tick = 0;
     if (!initialised)
     {
-        Swerve_Init();
+        Drive_Init();
         Arm_Motor_Init();
         last_tick = osKernelGetTickCount();
         initialised = true;
@@ -123,7 +123,7 @@ void motor_control_Run(void *argument)
     float dt = (float)(now - last_tick) * 0.001f;   // 1 kHz tick
     last_tick = now;
 
-    Swerve_Update(dt);   // 4 drive + 4 steer
+    Drive_Update(dt);   // 4 drive + 4 steer
 
     if (flag == 1)
     {

@@ -1,5 +1,5 @@
-#ifndef SWERVE_DRIVE_H_
-#define SWERVE_DRIVE_H_
+#ifndef DRIVE_H_
+#define DRIVE_H_
 
 /*
  * 4-wheel independent-steer drive (4 drive motors + 4 steering motors).
@@ -12,14 +12,14 @@
  *     data[4..7]  wheel speed, rpm, wheel order FL, FR, RL, RR
  *                 + = rover moving forward
  *
- * microros_main.c hands that array to Swerve_SetCommand(); the motor_control
- * task calls Swerve_Update() every cycle.
+ * microros_main.c hands that array to Drive_SetCommand(); the motor_control
+ * task calls Drive_Update() every cycle.
  */
 
 #include <stdint.h>
 #include <stdbool.h>
 
-#define SWERVE_NUM_WHEELS 4
+#define DRIVE_NUM_WHEELS 4
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,43 +32,43 @@ typedef enum {
     WHEEL_RR = 3
 } WheelId;
 
-void Swerve_Init(void);
+void Drive_Init(void);
 
 // One control cycle. dt_seconds = time since the previous call.
-void Swerve_Update(float dt_seconds);
+void Drive_Update(float dt_seconds);
 
 // Thread-safe; call from the micro-ROS callback.
 // steer_deg[4]: 0..180 (90 = straight), rpm[4]: signed wheel speed.
-void Swerve_SetCommand(const double steer_deg[SWERVE_NUM_WHEELS],
-                       const double rpm[SWERVE_NUM_WHEELS]);
+void Drive_SetCommand(const double steer_deg[DRIVE_NUM_WHEELS],
+                       const double rpm[DRIVE_NUM_WHEELS]);
 
 // Drop the current command (e.g. on micro-ROS agent disconnect): drive motors
 // stop on the next cycle, steering holds its target. Thread-safe.
-void Swerve_ClearCommand(void);
+void Drive_ClearCommand(void);
 
 // Drive motors off now, steering holds its current target. Motor task only.
-void Swerve_Stop(void);
+void Drive_Stop(void);
 
 // --- Live values for SWD / STM32CubeIDE Live Expressions ---
 // Gains can be written live (e.g. by a pyOCD tuner); they are applied every cycle.
 extern volatile float g_drive_kp, g_drive_ki, g_drive_kd;   // per rpm of error
 extern volatile float g_steer_kp, g_steer_ki, g_steer_kd;   // per degree of error
 
-extern volatile float    g_drive_target_rpm[SWERVE_NUM_WHEELS]; // after steer gating
-extern volatile float    g_drive_rpm[SWERVE_NUM_WHEELS];        // measured, rover frame
-extern volatile float    g_drive_duty[SWERVE_NUM_WHEELS];       // % , capped at +/-81.8 (18 V of 22 V)
-extern volatile float    g_steer_target_deg[SWERVE_NUM_WHEELS];
-extern volatile float    g_steer_deg[SWERVE_NUM_WHEELS];        // measured
-extern volatile float    g_steer_duty[SWERVE_NUM_WHEELS];       // % , capped at +/-54.5 (12 V of 22 V)
-extern volatile uint32_t g_steer_raw[SWERVE_NUM_WHEELS];        // AS5600 raw 0..4095 (use to calibrate home)
-extern volatile uint32_t g_steer_enc_err[SWERVE_NUM_WHEELS];    // failed I2C reads since boot
+extern volatile float    g_drive_target_rpm[DRIVE_NUM_WHEELS]; // after steer gating
+extern volatile float    g_drive_rpm[DRIVE_NUM_WHEELS];        // measured, rover frame
+extern volatile float    g_drive_duty[DRIVE_NUM_WHEELS];       // % , capped at +/-81.8 (18 V of 22 V)
+extern volatile float    g_steer_target_deg[DRIVE_NUM_WHEELS];
+extern volatile float    g_steer_deg[DRIVE_NUM_WHEELS];        // measured
+extern volatile float    g_steer_duty[DRIVE_NUM_WHEELS];       // % , capped at +/-54.5 (12 V of 22 V)
+extern volatile uint32_t g_steer_raw[DRIVE_NUM_WHEELS];        // AS5600 raw 0..4095 (use to calibrate home)
+extern volatile uint32_t g_steer_enc_err[DRIVE_NUM_WHEELS];    // failed I2C reads since boot
 extern volatile uint32_t g_steer_enc_ok;      // bit n = wheel n encoder read OK last cycle
 extern volatile uint32_t g_steer_fault;       // bit n = wheel n steering disabled (encoder lost)
-extern volatile uint32_t g_swerve_cmd_age_ms; // time since last /drive_controller/rover message
-extern volatile float    g_swerve_speed_scale;// 0..1 drive scale from steering error gate
+extern volatile uint32_t g_drive_cmd_age_ms; // time since last /drive_controller/rover message
+extern volatile float    g_drive_speed_scale;// 0..1 drive scale from steering error gate
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* SWERVE_DRIVE_H_ */
+#endif /* DRIVE_H_ */

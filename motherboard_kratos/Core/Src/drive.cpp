@@ -1,5 +1,5 @@
 /*
- * swerve_drive.cpp - 4-wheel independent-steer drive (4 drive + 4 steer motors).
+ * drive.cpp - 4-wheel independent-steer drive (4 drive + 4 steer motors).
  *
  * Drive motors : SpeedMotor (PWM + single DIR pin), quadrature encoder on TIM1..TIM4.
  * Steer motors : SteerMotor (PWM + single DIR pin), AS5600 absolute encoder on the
@@ -10,7 +10,7 @@
  * nothing in CubeMX needs to change. See the HARDWARE MAP below.
  */
 
-#include "swerve_drive.h"
+#include "drive.h"
 #include "SpeedMotor.h"
 #include "SteerMotor.h"
 #include "main.h"
@@ -115,7 +115,7 @@ struct WheelConfig {
     int8_t             steerMotorDir;
 };
 
-static const WheelConfig WHEEL_CFG[SWERVE_NUM_WHEELS] = {
+static const WheelConfig WHEEL_CFG[DRIVE_NUM_WHEELS] = {
     //  drive PWM               DIR                 enc     mDir eDir | steer PWM              DIR                mux home  eDir mDir
     { &htim13, TIM_CHANNEL_1, GPIOG, GPIO_PIN_8, &htim1, +1,  +1,   &htim17, TIM_CHANNEL_1, GPIOG, GPIO_PIN_7, 0, 2048, +1,  +1 }, // FL
     { &htim14, TIM_CHANNEL_1, GPIOG, GPIO_PIN_9, &htim2, -1,  -1,   &htim12, TIM_CHANNEL_1, GPIOG, GPIO_PIN_2, 1, 2048, +1,  +1 }, // FR
@@ -132,10 +132,10 @@ static const WheelConfig WHEEL_CFG[SWERVE_NUM_WHEELS] = {
                                   WHEEL_CFG[i].steerHomeRaw, WHEEL_CFG[i].steerEncDir,            \
                                   WHEEL_CFG[i].steerMotorDir, STEER_KP, STEER_KI, STEER_KD)
 
-static SpeedMotor drive_motors[SWERVE_NUM_WHEELS] = {
+static SpeedMotor drive_motors[DRIVE_NUM_WHEELS] = {
     WHEEL_DRIVE(0), WHEEL_DRIVE(1), WHEEL_DRIVE(2), WHEEL_DRIVE(3)
 };
-static SteerMotor steer_motors[SWERVE_NUM_WHEELS] = {
+static SteerMotor steer_motors[DRIVE_NUM_WHEELS] = {
     WHEEL_STEER(0), WHEEL_STEER(1), WHEEL_STEER(2), WHEEL_STEER(3)
 };
 
@@ -146,42 +146,42 @@ extern "C" {
 volatile float g_drive_kp = DRIVE_KP, g_drive_ki = DRIVE_KI, g_drive_kd = DRIVE_KD;
 volatile float g_steer_kp = STEER_KP, g_steer_ki = STEER_KI, g_steer_kd = STEER_KD;
 
-volatile float    g_drive_target_rpm[SWERVE_NUM_WHEELS] = {0};
-volatile float    g_drive_rpm[SWERVE_NUM_WHEELS]        = {0};
-volatile float    g_drive_duty[SWERVE_NUM_WHEELS]       = {0};
-volatile float    g_steer_target_deg[SWERVE_NUM_WHEELS] = {90.0f, 90.0f, 90.0f, 90.0f};
-volatile float    g_steer_deg[SWERVE_NUM_WHEELS]        = {90.0f, 90.0f, 90.0f, 90.0f};
-volatile float    g_steer_duty[SWERVE_NUM_WHEELS]       = {0};
-volatile uint32_t g_steer_raw[SWERVE_NUM_WHEELS]        = {0};
-volatile uint32_t g_steer_enc_err[SWERVE_NUM_WHEELS]    = {0};
+volatile float    g_drive_target_rpm[DRIVE_NUM_WHEELS] = {0};
+volatile float    g_drive_rpm[DRIVE_NUM_WHEELS]        = {0};
+volatile float    g_drive_duty[DRIVE_NUM_WHEELS]       = {0};
+volatile float    g_steer_target_deg[DRIVE_NUM_WHEELS] = {90.0f, 90.0f, 90.0f, 90.0f};
+volatile float    g_steer_deg[DRIVE_NUM_WHEELS]        = {90.0f, 90.0f, 90.0f, 90.0f};
+volatile float    g_steer_duty[DRIVE_NUM_WHEELS]       = {0};
+volatile uint32_t g_steer_raw[DRIVE_NUM_WHEELS]        = {0};
+volatile uint32_t g_steer_enc_err[DRIVE_NUM_WHEELS]    = {0};
 volatile uint32_t g_steer_enc_ok       = 0;
 volatile uint32_t g_steer_fault        = 0;
-volatile uint32_t g_swerve_cmd_age_ms  = 0xFFFFFFFFu;
-volatile float    g_swerve_speed_scale = 0.0f;
+volatile uint32_t g_drive_cmd_age_ms  = 0xFFFFFFFFu;
+volatile float    g_drive_speed_scale = 0.0f;
 }
 
 // =====================================================================
 // SHARED COMMAND (written by micro-ROS task, read by motor task)
 // =====================================================================
-struct SwerveCmd {
-    float    steer_deg[SWERVE_NUM_WHEELS];
-    float    rpm[SWERVE_NUM_WHEELS];
+struct DriveCmd {
+    float    steer_deg[DRIVE_NUM_WHEELS];
+    float    rpm[DRIVE_NUM_WHEELS];
     uint32_t stamp_ms;
     bool     valid;
 };
-static SwerveCmd shared_cmd = {};
+static DriveCmd shared_cmd = {};
 
 // =====================================================================
 // INTERNAL STATE
 // =====================================================================
-static float    ticks_per_rev[SWERVE_NUM_WHEELS];
-static uint16_t cnt_hist[SWERVE_NUM_WHEELS][SPEED_WINDOW];
+static float    ticks_per_rev[DRIVE_NUM_WHEELS];
+static uint16_t cnt_hist[DRIVE_NUM_WHEELS][SPEED_WINDOW];
 static float    dt_hist[SPEED_WINDOW];
 static uint8_t  hist_idx = 0;
 static uint8_t  hist_filled = 0;
 
-static uint8_t  enc_fail_count[SWERVE_NUM_WHEELS] = {0};
-static bool     enc_have_reading[SWERVE_NUM_WHEELS] = {false};
+static uint8_t  enc_fail_count[DRIVE_NUM_WHEELS] = {0};
+static bool     enc_have_reading[DRIVE_NUM_WHEELS] = {false};
 static uint32_t overtravel_latched = 0;   // bit n = wheel n, cleared only by reset
 
 // ---------------------------------------------------------------------
@@ -216,7 +216,7 @@ static bool ReadSteerEncoder(uint8_t ch, uint16_t* out)
 static uint32_t ReadAllSteerEncoders(void)
 {
     uint32_t ok = 0;
-    for (uint8_t i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (uint8_t i = 0; i < DRIVE_NUM_WHEELS; i++) {
         uint16_t raw;
         if (ReadSteerEncoder(WHEEL_CFG[i].steerMuxCh, &raw)) {
             g_steer_raw[i] = raw;
@@ -235,10 +235,10 @@ static uint32_t ReadAllSteerEncoders(void)
 // Measure all four wheel speeds (rover frame, rpm): counts moved since the
 // oldest of the last SPEED_WINDOW samples, divided by the time in between.
 // dt_hist[k] = time between sample k-1 and sample k.
-static void ReadDriveSpeeds(float dt, float rpm_out[SWERVE_NUM_WHEELS])
+static void ReadDriveSpeeds(float dt, float rpm_out[DRIVE_NUM_WHEELS])
 {
-    uint16_t now_cnt[SWERVE_NUM_WHEELS];
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++)
+    uint16_t now_cnt[DRIVE_NUM_WHEELS];
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++)
         now_cnt[i] = (uint16_t)__HAL_TIM_GET_COUNTER(WHEEL_CFG[i].driveEncTim);
 
     const uint8_t n = hist_filled;
@@ -246,7 +246,7 @@ static void ReadDriveSpeeds(float dt, float rpm_out[SWERVE_NUM_WHEELS])
     float span = dt;
     for (uint8_t k = 1; k < n; k++) span += dt_hist[(oldest + k) % SPEED_WINDOW];
 
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         if (n == 0) { rpm_out[i] = 0.0f; continue; }
         int16_t delta = (int16_t)(now_cnt[i] - cnt_hist[i][oldest]);  // 16-bit wrap-safe
         float revs = (float)delta / ticks_per_rev[i];
@@ -254,7 +254,7 @@ static void ReadDriveSpeeds(float dt, float rpm_out[SWERVE_NUM_WHEELS])
     }
 
     // Push this sample (overwrites the oldest once the ring is full).
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) cnt_hist[i][hist_idx] = now_cnt[i];
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) cnt_hist[i][hist_idx] = now_cnt[i];
     dt_hist[hist_idx] = dt;
     hist_idx = (uint8_t)((hist_idx + 1) % SPEED_WINDOW);
     if (hist_filled < SPEED_WINDOW) hist_filled++;
@@ -278,14 +278,14 @@ static inline float Clampf(float v, float lo, float hi) { return v < lo ? lo : (
 // =====================================================================
 extern "C" {
 
-void Swerve_Init(void)
+void Drive_Init(void)
 {
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         ClampPwmPeriod(WHEEL_CFG[i].drivePwmTim);
         ClampPwmPeriod(WHEEL_CFG[i].steerPwmTim);
     }
 
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         HAL_TIM_Encoder_Start(WHEEL_CFG[i].driveEncTim, TIM_CHANNEL_ALL);
         ticks_per_rev[i] = DRIVE_ENC_PPR * DRIVE_GEAR_RATIO *
                            EncoderEdgeMultiplier(WHEEL_CFG[i].driveEncTim);
@@ -297,7 +297,7 @@ void Swerve_Init(void)
 
     // Hold every steering wheel where it is on boot (no jump before the first command).
     ReadAllSteerEncoders();
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         if (enc_have_reading[i]) {
             float a = steer_motors[i].rawToAngle((uint16_t)g_steer_raw[i]);
             steer_motors[i].setTargetAngle(a);
@@ -307,11 +307,11 @@ void Swerve_Init(void)
     }
 }
 
-void Swerve_SetCommand(const double steer_deg[SWERVE_NUM_WHEELS],
-                       const double rpm[SWERVE_NUM_WHEELS])
+void Drive_SetCommand(const double steer_deg[DRIVE_NUM_WHEELS],
+                       const double rpm[DRIVE_NUM_WHEELS])
 {
-    SwerveCmd c;
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    DriveCmd c;
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         // Reject the whole message on NaN/inf rather than drive on garbage.
         if (!std::isfinite(steer_deg[i]) || !std::isfinite(rpm[i])) return;
         c.steer_deg[i] = (float)steer_deg[i];
@@ -325,30 +325,30 @@ void Swerve_SetCommand(const double steer_deg[SWERVE_NUM_WHEELS],
     taskEXIT_CRITICAL();
 }
 
-void Swerve_ClearCommand(void)
+void Drive_ClearCommand(void)
 {
     taskENTER_CRITICAL();
     shared_cmd.valid = false;
     taskEXIT_CRITICAL();
 }
 
-void Swerve_Stop(void)
+void Drive_Stop(void)
 {
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         drive_motors[i].stop();
         g_drive_target_rpm[i] = 0.0f;
         g_drive_duty[i] = 0.0f;
     }
 }
 
-void Swerve_Update(float dt)
+void Drive_Update(float dt)
 {
     if (dt <= 0.0f) return;
 
     // Large per-cycle buffers are static: only the motor_control task calls this,
     // and its stack is 128 words (set in the .ioc).
-    static SwerveCmd cmd;
-    static float meas_rpm[SWERVE_NUM_WHEELS];
+    static DriveCmd cmd;
+    static float meas_rpm[DRIVE_NUM_WHEELS];
 
     // ---- 1. Snapshot the latest command ----
     taskENTER_CRITICAL();
@@ -357,7 +357,7 @@ void Swerve_Update(float dt)
 
     uint32_t age = (uint32_t)xTaskGetTickCount() - cmd.stamp_ms;
     bool fresh = cmd.valid && age < CMD_TIMEOUT_MS;
-    g_swerve_cmd_age_ms = cmd.valid ? age : 0xFFFFFFFFu;
+    g_drive_cmd_age_ms = cmd.valid ? age : 0xFFFFFFFFu;
 
     // ---- 2. Sensors ----
     ReadAllSteerEncoders();
@@ -366,7 +366,7 @@ void Swerve_Update(float dt)
     // ---- 3. Steering ----
     uint32_t fault = 0;
     float max_err = 0.0f;
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         SteerMotor& s = steer_motors[i];
         s.setGains(g_steer_kp, g_steer_ki, g_steer_kd);
         if (fresh) s.setTargetAngle(cmd.steer_deg[i]);  // stale -> hold last target
@@ -403,17 +403,17 @@ void Swerve_Update(float dt)
         scale = 1.0f - (max_err - STEER_GATE_LO_DEG) / (STEER_GATE_HI_DEG - STEER_GATE_LO_DEG);
         scale = Clampf(scale, 0.0f, 1.0f);
     }
-    g_swerve_speed_scale = scale;
+    g_drive_speed_scale = scale;
 
     // ---- 5. Drive ----
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         g_drive_rpm[i] = meas_rpm[i];
     }
     if (!fresh) {
-        Swerve_Stop();   // link lost / no command yet: PWM off
+        Drive_Stop();   // link lost / no command yet: PWM off
         return;
     }
-    for (int i = 0; i < SWERVE_NUM_WHEELS; i++) {
+    for (int i = 0; i < DRIVE_NUM_WHEELS; i++) {
         SpeedMotor& d = drive_motors[i];
         const float dir = (float)WHEEL_CFG[i].driveMotorDir;
         float target = cmd.rpm[i] * scale;              // rover frame
