@@ -15,7 +15,7 @@ extern volatile bool   flag;
 
 extern volatile double arm_cmd[7];
 extern volatile double wheel_info[8];
-
+extern volatile double ld_cmd[10];
 #endif
 void motor_control_Run(void *argument);
 

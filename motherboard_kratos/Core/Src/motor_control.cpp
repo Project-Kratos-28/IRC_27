@@ -11,7 +11,9 @@ extern "C" {
 #include "cmsis_os2.h"
 #include <stdbool.h>
 volatile bool   flag = false;
-
+volatile double arm_cmd[7]    = {0};
+volatile double ld_cmd[10]    = {0};
+volatile double wheel_info[8] = {0};
 
 double   motor_cmd_shared[6] = {0};
 uint32_t motor_cmd_stamp_ms  = 0;

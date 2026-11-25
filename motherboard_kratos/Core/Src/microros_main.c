@@ -63,8 +63,7 @@ typedef enum states {
 /* --- Externs & Transport Prototypes --- */
 extern UART_HandleTypeDef huart3;
 extern volatile bool flag;
-volatile double arm_cmd[7]    = {0};
-volatile double wheel_info[8] = {0};
+
 bool cubemx_transport_open(struct uxrCustomTransport * transport);
 bool cubemx_transport_close(struct uxrCustomTransport * transport);
 size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err);
@@ -142,6 +141,7 @@ void payload_cb(const void * msgin) {
   arm_cmd[4] = (double)w2;  // Pre-mixed Bevel 2
   arm_cmd[5] = m5;          // Linear Actuator
   arm_cmd[6] = m6;          // Gripper
+  // Note: ld_cmd[10] from Test requires regenerating libmicroros with ArmCmd.ld_cmd
   taskEXIT_CRITICAL();
 }
 
@@ -298,6 +298,12 @@ void microros_main_Run(void *argument)
 
       case AGENT_DISCONNECTED:
         ros_destroy();
+        taskENTER_CRITICAL();
+        motor_cmd_valid = false;
+        flag = false;
+        memset((void *)arm_cmd, 0, sizeof(arm_cmd));
+        memset((void *)ld_cmd,  0, sizeof(ld_cmd));
+        taskEXIT_CRITICAL();
         agent_state = WAITING_AGENT;
         break;
     }
