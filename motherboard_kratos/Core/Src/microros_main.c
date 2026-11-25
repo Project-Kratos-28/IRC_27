@@ -32,6 +32,26 @@ extern IWDG_HandleTypeDef hiwdg1;
 #define WDG_FEED()        HAL_IWDG_Refresh(&hiwdg1)
 #define RCCHECK(fn)  do { WDG_FEED(); if ((fn) != RCL_RET_OK) return false; } while (0)
 
+/* --- Arm Polarity Macros (1 = Normal, -1 = Inverted) --- */
+#define BASE_POLARITY             1
+#define SHOULDER_POLARITY         1
+#define ELBOW_POLARITY            1
+#define PITCH_POLARITY            1
+#define ROLL_POLARITY            -1
+
+#define BEVEL_1_POLARITY          1
+#define BEVEL_2_POLARITY          1
+#define LINEAR_ACTUATOR_POLARITY  1
+#define GRIPPER_POLARITY          1
+
+/* --- Arm Max Speed Macros (0 to 255 PWM scale) --- */
+#define BASE_MAX_SPEED            175
+#define SHOULDER_MAX_SPEED        255
+#define ELBOW_MAX_SPEED           255
+#define BEVEL_1_MAX_SPEED         255
+#define BEVEL_2_MAX_SPEED         255
+#define GRIPPER_MAX_SPEED         255
+
 /* --- Types --- */
 typedef enum states {
   WAITING_AGENT,
@@ -84,16 +104,16 @@ void payload_cb(const void * msgin) {
   if (msg == NULL) return;
 
   // 1. Direct joint commands: Base (0), Shoulder (1), Elbow (2)
-  double m0 = msg->arm_cmd[0];
-  double m1 = msg->arm_cmd[1];
-  double m2 = msg->arm_cmd[2];
+  double m0 = (msg->arm_cmd[0] * BASE_POLARITY * BASE_MAX_SPEED) / 255.0;
+  double m1 = (msg->arm_cmd[1] * SHOULDER_POLARITY * SHOULDER_MAX_SPEED) / 255.0;
+  double m2 = (msg->arm_cmd[2] * ELBOW_POLARITY * ELBOW_MAX_SPEED) / 255.0;
 
   // 2. Bevel differential mixing for wrist: Pitch (3), Roll (4)
-  int32_t pitch = (int32_t)msg->arm_cmd[3];
-  int32_t roll  = -(int32_t)msg->arm_cmd[4];
+  int32_t pitch = (int32_t)msg->arm_cmd[3] * PITCH_POLARITY;
+  int32_t roll  = (int32_t)msg->arm_cmd[4] * ROLL_POLARITY;
 
-  int32_t w1 = pitch - roll;
-  int32_t w2 = pitch + roll;
+  int32_t w1 = (pitch - roll) * BEVEL_1_POLARITY;
+  int32_t w2 = (pitch + roll) * BEVEL_2_POLARITY;
 
   // Proportional normalization if combined magnitude exceeds 255
   int32_t abs_w1 = (w1 < 0) ? -w1 : w1;
@@ -105,9 +125,12 @@ void payload_cb(const void * msgin) {
     w2 = (w2 * 255) / max_mag;
   }
 
-  // 3. Auxiliary (5) and Linear Actuator / Gripper (6)
-  double m5 = msg->arm_cmd[5];
-  double m6 = msg->arm_cmd[6];
+  w1 = (w1 * BEVEL_1_MAX_SPEED) / 255;
+  w2 = (w2 * BEVEL_2_MAX_SPEED) / 255;
+
+  // 3. Linear Actuator (5) and Gripper (6)
+  double m5 = msg->arm_cmd[5] * LINEAR_ACTUATOR_POLARITY;
+  double m6 = (msg->arm_cmd[6] * GRIPPER_POLARITY * GRIPPER_MAX_SPEED) / 255.0;
 
   // 4. Atomically store pre-computed motor values into shared arm_cmd
   taskENTER_CRITICAL();
@@ -117,8 +140,8 @@ void payload_cb(const void * msgin) {
   arm_cmd[2] = m2;          // Elbow
   arm_cmd[3] = (double)w1;  // Pre-mixed Bevel 1
   arm_cmd[4] = (double)w2;  // Pre-mixed Bevel 2
-  arm_cmd[5] = m5;          // Auxiliary
-  arm_cmd[6] = m6;          // Linear Actuator / Gripper
+  arm_cmd[5] = m5;          // Linear Actuator
+  arm_cmd[6] = m6;          // Gripper
   taskEXIT_CRITICAL();
 }
 
