@@ -185,7 +185,7 @@ static bool ros_create(void)
   RCCHECK(rclc_subscription_init_best_effort(&payload_message_subscriber, &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(kratos_teerth_rohan_pandya_msgs, msg, ArmCmd), "payload_cmd"));
   RCCHECK(rclc_subscription_init_best_effort(&drive_message_subscriber, &node,
-            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray), DRIVE_CMD_TOPIC));
+            ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray), "drive_controller/rover"));
   RCCHECK(rclc_subscription_init_best_effort(&misc_message_subscriber, &node,
             ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "misc_topic"));
 

@@ -1,5 +1,6 @@
 #include "SteerMotor.h"
 
+
 SteerMotor::SteerMotor(TIM_HandleTypeDef* pwmTim, uint32_t pwmChannel, uint32_t pwmPeriod,
                        GPIO_TypeDef* dirPort, uint16_t dirPin,
                        uint16_t homeRaw, int encoderDir, int motorDir,
