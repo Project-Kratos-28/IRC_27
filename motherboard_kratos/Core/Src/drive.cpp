@@ -6,8 +6,8 @@
  *                output shaft; all four AS5600s share address 0x36, so they sit
  *                behind a PCA9548A I2C mux on I2C1 (PB6 SCL / PB7 SDA).
  *
- * Everything here uses peripherals that already exist in motherboard_kratos.ioc;
- * nothing in CubeMX needs to change. See the HARDWARE MAP below.
+ * Pin map follows the fabricated motherboard (Electronics_Motherboard, branch
+ * NEW_MOTHERBOARD_FILES_dev). See the HARDWARE MAP below.
  */
 
 #include "drive.h"
@@ -21,7 +21,7 @@
 #include <cmath>
 
 extern TIM_HandleTypeDef htim1, htim2, htim3, htim4;   // drive encoders
-extern TIM_HandleTypeDef htim5, htim12, htim13, htim14, htim15, htim16, htim17; // PWM
+extern TIM_HandleTypeDef htim5, htim13, htim14, htim15, htim16, htim17;  // PWM
 extern I2C_HandleTypeDef hi2c1;
 
 // =====================================================================
@@ -77,15 +77,21 @@ static_assert(DRIVE_MOTOR_RATED_V <= SUPPLY_VOLTAGE && STEER_MOTOR_RATED_V <= SU
 // HARDWARE MAP  (wheel order matches the high level: FL, FR, RL, RR)
 // =====================================================================
 //
-//  Wheel | Drive PWM        Drive DIR | Drive encoder      | Steer PWM         Steer DIR | AS5600 mux ch
-//  ------+----------------------------+--------------------+-----------------------------+--------------
-//  FL    | TIM13_CH1 PF8    PG8       | TIM1  PE9 / PE11   | TIM17_CH1 PF7     PG7       | 0
-//  FR    | TIM14_CH1 PF9    PG9       | TIM2  PA5 / PA1    | TIM12_CH1 PB14    PG2       | 1
-//  RL    | TIM15_CH2 PE6    PG4       | TIM3  PA6 / PA7    | TIM12_CH2 PB15    PG3       | 2
-//  RR    | TIM16_CH1 PF6    PG6       | TIM4  PD12 / PD13  | TIM5_CH1  PA0     PG5       | 3
+//  One motherboard terminal per wheel: drive_conn_set_N (5-pin screw terminal)
+//  pin 1 PWM / pin 2 DIR = drive motor, pin 3 PWM / pin 4 DIR = steer motor, pin 5 GND.
 //
-//  Drive PWM/DIR pairs are the ones the 6-wheel firmware used (motors 0,1,2,4).
-//  Arm keeps TIM8_CH1..4 (PC6..PC9), TIM15_CH1 (PE5), PD7/PD10/PD11 - untouched.
+//  Wheel | Terminal | Drive PWM        DIR  | Drive encoder           | Steer PWM        DIR  | AS5600
+//  ------+----------+-----------------------+-------------------------+-----------------------+---------------
+//  FL    | J38 set1 | TIM5_CH1  PA0    PG2  | J25 TIM1 PE9 / PE11     | TIM5_CH2  PA1    PG3  | J17 mux ch0
+//  FR    | J39 set2 | TIM5_CH3  PA2    PG4  | J26 TIM2 PA5 / PB3      | TIM15_CH2 PE6    PG5  | J16 mux ch1
+//  RL    | J40 set3 | TIM16_CH1 PF6    PG6  | J27 TIM3 PA6 / PA7      | TIM17_CH1 PF7    PG7  | J15 mux ch2
+//  RR    | J41 set4 | TIM13_CH1 PF8    PG8  | J28 TIM4 PD12 / PD13    | TIM14_CH1 PF9    PG9  | J14 mux ch3
+//
+//  ASSUMED (the board does not label it, verify on the rover): set N = wheel N in
+//  FL, FR, RL, RR order; pins 1/2 = drive, 3/4 = steer; AB_enc_conn_N and
+//  abs_enc_conn_N belong to wheel N. If a wheel is wired differently, only its
+//  row in WHEEL_CFG needs to change.
+//  Arm keeps TIM8_CH1..4 (PC6..PC9), TIM15_CH1 (PE5), PD7..PD11 - untouched.
 //
 //  Per-wheel calibration (all TODO on the real rover):
 //   driveMotorDir : +1 if DIR pin HIGH drives the rover FORWARD (left/right sides
@@ -116,13 +122,12 @@ struct WheelConfig {
 };
 
 static const WheelConfig WHEEL_CFG[DRIVE_NUM_WHEELS] = {
-    //  drive PWM               DIR                 enc     mDir eDir | steer PWM              DIR                mux home  eDir mDir
-    { &htim13, TIM_CHANNEL_1, GPIOG, GPIO_PIN_8, &htim1, +1,  +1,   &htim17, TIM_CHANNEL_1, GPIOG, GPIO_PIN_7, 0, 2048, +1,  +1 }, // FL
-    { &htim14, TIM_CHANNEL_1, GPIOG, GPIO_PIN_9, &htim2, -1,  -1,   &htim12, TIM_CHANNEL_1, GPIOG, GPIO_PIN_2, 1, 2048, +1,  +1 }, // FR
-    { &htim15, TIM_CHANNEL_2, GPIOG, GPIO_PIN_4, &htim3, +1,  +1,   &htim12, TIM_CHANNEL_2, GPIOG, GPIO_PIN_3, 2, 2048, +1,  +1 }, // RL
-    { &htim16, TIM_CHANNEL_1, GPIOG, GPIO_PIN_6, &htim4, -1,  -1,   &htim5,  TIM_CHANNEL_1, GPIOG, GPIO_PIN_5, 3, 2048, +1,  +1 }, // RR
+    //  drive PWM              DIR                enc     mDir eDir | steer PWM              DIR                mux home  eDir mDir
+    { &htim5,  TIM_CHANNEL_1, GPIOG, GPIO_PIN_2, &htim1, +1,  +1,   &htim5,  TIM_CHANNEL_2, GPIOG, GPIO_PIN_3, 0, 2048, +1,  +1 }, // FL  J38
+    { &htim5,  TIM_CHANNEL_3, GPIOG, GPIO_PIN_4, &htim2, -1,  -1,   &htim15, TIM_CHANNEL_2, GPIOG, GPIO_PIN_5, 1, 2048, +1,  +1 }, // FR  J39
+    { &htim16, TIM_CHANNEL_1, GPIOG, GPIO_PIN_6, &htim3, +1,  +1,   &htim17, TIM_CHANNEL_1, GPIOG, GPIO_PIN_7, 2, 2048, +1,  +1 }, // RL  J40
+    { &htim13, TIM_CHANNEL_1, GPIOG, GPIO_PIN_8, &htim4, -1,  -1,   &htim14, TIM_CHANNEL_1, GPIOG, GPIO_PIN_9, 3, 2048, +1,  +1 }, // RR  J41
 };
-
 // pwmPeriod = 0 -> each motor reads its timer's ARR in begin() (65535 in the .ioc).
 #define WHEEL_DRIVE(i) SpeedMotor(WHEEL_CFG[i].drivePwmTim, WHEEL_CFG[i].drivePwmCh, 0,           \
                                   WHEEL_CFG[i].driveDirPort, WHEEL_CFG[i].driveDirPin,            \
@@ -260,9 +265,9 @@ static void ReadDriveSpeeds(float dt, float rpm_out[DRIVE_NUM_WHEELS])
     if (hist_filled < SPEED_WINDOW) hist_filled++;
 }
 
-// Ensure a PWM timer has a 16-bit period. TIM5 is 32-bit and its ARR is left at
-// 0xFFFFFFFF in the .ioc (0.015 Hz PWM); match it to the other PWM timers here
-// instead of touching CubeMX.
+// Ensure a PWM timer has a 16-bit period. TIM5 is 32-bit; the .ioc sets its ARR
+// to 65535, but CubeMX's default is 0xFFFFFFFF (0.015 Hz PWM), so keep this as a
+// guard in case a regeneration resets it.
 static void ClampPwmPeriod(TIM_HandleTypeDef* htim)
 {
     if (__HAL_TIM_GET_AUTORELOAD(htim) > 0xFFFFu) {

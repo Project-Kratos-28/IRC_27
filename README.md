@@ -61,25 +61,40 @@ storage for layout dimensions.
 
 ## Drive hardware map
 
-Everything uses peripherals that already exist in the `.ioc`.
+Matches the fabricated motherboard: [Electronics_Motherboard](https://github.com/Project-Kratos-28/Electronics_Motherboard),
+branch `NEW_MOTHERBOARD_FILES_dev`, file `motherboard - kratos/motherboard - kratos.kicad_pcb`.
+Each wheel uses one 5-pin `drive_conn_set` terminal: pins 1/2 are drive PWM/DIR,
+pins 3/4 are steer PWM/DIR, and pin 5 is GND.
 
-| Wheel | Drive PWM | Drive DIR | Drive encoder | Steer PWM | Steer DIR | AS5600 mux ch |
-|---|---|---|---|---|---|---|
-| FL | TIM13_CH1 `PF8` | `PG8` | TIM1 `PE9`/`PE11` | TIM17_CH1 `PF7` | `PG7` | 0 |
-| FR | TIM14_CH1 `PF9` | `PG9` | TIM2 `PA5`/`PA1` | TIM12_CH1 `PB14` | `PG2` | 1 |
-| RL | TIM15_CH2 `PE6` | `PG4` | TIM3 `PA6`/`PA7` | TIM12_CH2 `PB15` | `PG3` | 2 |
-| RR | TIM16_CH1 `PF6` | `PG6` | TIM4 `PD12`/`PD13` | TIM5_CH1 `PA0` | `PG5` | 3 |
+| Wheel | Terminal | Drive PWM | Drive DIR | Drive encoder | Steer PWM | Steer DIR | AS5600 |
+|---|---|---|---|---|---|---|---|
+| FL | J38 `set_1` | TIM5_CH1 `PA0` | `PG2` | J25 TIM1 `PE9`/`PE11` | TIM5_CH2 `PA1` | `PG3` | J17, mux ch0 |
+| FR | J39 `set_2` | TIM5_CH3 `PA2` | `PG4` | J26 TIM2 `PA5`/`PB3` | TIM15_CH2 `PE6` | `PG5` | J16, mux ch1 |
+| RL | J40 `set_3` | TIM16_CH1 `PF6` | `PG6` | J27 TIM3 `PA6`/`PA7` | TIM17_CH1 `PF7` | `PG7` | J15, mux ch2 |
+| RR | J41 `set_4` | TIM13_CH1 `PF8` | `PG8` | J28 TIM4 `PD12`/`PD13` | TIM14_CH1 `PF9` | `PG9` | J14, mux ch3 |
 
+- **Assumed, check on the rover:** `set_N` is wheel N in FL, FR, RL, RR order; pins 1/2
+  are drive and 3/4 are steer; `AB_enc_conn_N` and `abs_enc_conn_N` belong to wheel N.
+  If a wheel is wired differently, change only its row in `WHEEL_CFG`.
 - **Drive encoders**: quadrature, 13 PPR motor encoder with a 181:1 gearbox. The x2/x4
   edge multiplier is read from each timer's encoder mode at startup. TIM2 is x4 and
   TIM1/3/4 are x2.
-- **Steering encoders**: 4× AS5600 (all at I2C address `0x36`) behind a PCA9548A mux
-  (`0x70`) on **I2C1** (`PB6` SCL / `PB7` SDA), about 100 kHz.
-- **PWM**: all timers run at ARR 65535, which gives about 977 Hz. TIM5 is 32-bit and its
-  ARR is `0xFFFFFFFF` in the `.ioc`, so `drive.cpp` sets it to `0xFFFF` at startup.
-- The wheel positions (which motor is FL, etc.) are an assumption. **Check them on the rover.**
+- **Steering encoders**: AS5600 (I2C address `0x36`) behind a TCA9548A mux (`0x70`) on
+  **I2C1** (`PB6` SCL / `PB7` SDA), about 100 kHz. Channels 4 and 5 (J30/J31) are spare,
+  and channels 6 and 7 are the IMU connectors.
+- **PWM**: every timer runs at ARR 65535, which gives about 977 Hz.
 
-### Arm hardware map (for reference)
+### Known board defects (fabricated rev 1)
+
+- **The Nucleo GND pads are not connected to board GND** (no copper). Add a wire from a
+  Nucleo GND pin to board GND, otherwise PWM/DIR/I2C have no common reference.
+- **The TCA9548A `Vin` pad is unconnected.** Wire it to 3V3, otherwise no steering
+  encoder can be read and all steering (and therefore drive) stays disabled.
+- The arm DIR lines on J6 pin 4 / J7 pin 2 are `PD8`/`PD9`, the same pins as USART3
+  (micro-ROS serial). The firmware moved those DIR signals to `PB8`/`PB9`, which the
+  board does not route.
+
+### Arm hardware map (firmware, for reference)
 
 | Joint | PWM | DIR |
 |---|---|---|
